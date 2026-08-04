@@ -12,6 +12,8 @@ async function main() {
 
   console.log(`${messages.length} eşleşen e-posta bulundu.`);
 
+  let hadError = false;
+
   for (const message of messages) {
     if (!message.id) continue;
 
@@ -40,7 +42,12 @@ async function main() {
       }
     } catch (err) {
       console.error(`[${message.id}] İşlenirken hata oluştu, atlanıyor:`, err);
+      hadError = true;
     }
+  }
+
+  if (hadError) {
+    process.exitCode = 1;
   }
 }
 
