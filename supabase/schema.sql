@@ -7,6 +7,7 @@ create table if not exists expenses (
   merchant text not null,
   amount numeric(12, 2) not null,
   transaction_at timestamptz not null,
+  available_limit numeric(12, 2),
   created_at timestamptz not null default now()
 );
 

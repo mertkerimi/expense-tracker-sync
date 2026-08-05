@@ -22,6 +22,7 @@ export async function insertExpense(
     merchant: expense.merchant,
     amount: expense.amount,
     transaction_at: expense.transactionAt,
+    available_limit: expense.availableLimit,
   });
 
   if (error) {
