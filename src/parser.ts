@@ -10,8 +10,10 @@ export interface ParsedExpense {
 
 // Örnek: "0645 ile biten Worldcard kartınız ile EMAAR BURGER KING firmasından
 // 04.08.2026 tarihinde 17:13 saatinde 32,00 TL tutarında işlem gerçekleştirilmiştir."
+// Kart tipi "Worldcard" veya "Worldcard dijital" gibi ek nitelendirmeler
+// içerebiliyor (fiziksel/sanal kart farkı), bu yüzden (.+?) ile esnek tutuluyor.
 const TRANSACTION_PATTERN =
-  /(\d{4}) ile biten (\S+) kartınız ile (.+?) firmasından (\d{2})\.(\d{2})\.(\d{4}) tarihinde (\d{2}):(\d{2}) saatinde ([\d.,]+) TL tutarında işlem gerçekleştirilmiştir/;
+  /(\d{4}) ile biten (.+?) kartınız ile (.+?) firmasından (\d{2})\.(\d{2})\.(\d{4}) tarihinde (\d{2}):(\d{2}) saatinde ([\d.,]+) TL tutarında işlem gerçekleştirilmiştir/;
 
 export function extractBodyText(html: string): string {
   const $ = cheerio.load(html);
