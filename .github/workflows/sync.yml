@@ -25,3 +25,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           EXPENSE_USER_ID: ${{ secrets.EXPENSE_USER_ID }}
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          MS_REFRESH_TOKEN: ${{ secrets.MS_REFRESH_TOKEN }}
+          EXPENSE_USER_ID_2: ${{ secrets.EXPENSE_USER_ID_2 }}

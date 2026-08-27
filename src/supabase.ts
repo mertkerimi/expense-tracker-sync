@@ -11,11 +11,12 @@ function getSupabaseClient() {
 export async function insertExpense(
   gmailMessageId: string,
   expense: ParsedExpense,
+  userId: string,
 ): Promise<"inserted" | "duplicate"> {
   const supabase = getSupabaseClient();
 
   const { error } = await supabase.from("expenses").insert({
-    user_id: process.env.EXPENSE_USER_ID,
+    user_id: userId,
     gmail_message_id: gmailMessageId,
     card_last4: expense.cardLast4,
     card_type: expense.cardType,

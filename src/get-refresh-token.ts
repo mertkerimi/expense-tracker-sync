@@ -3,7 +3,7 @@ import http from "node:http";
 import open from "open";
 import { google } from "googleapis";
 
-const PORT = 3000;
+const PORT = 3005;
 const REDIRECT_URI = `http://localhost:${PORT}/oauth2callback`;
 
 async function main() {

@@ -8,6 +8,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "get-token": "tsx src/get-refresh-token.ts",
+    "get-token-outlook": "tsx src/get-refresh-token-outlook.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
