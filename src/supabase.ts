@@ -34,3 +34,17 @@ export async function insertExpense(
 
   return "inserted";
 }
+
+/// Bir kullanıcının kayıtlı tüm cihaz token'larını döner — birden fazla
+/// cihazda oturum açmış olabilir (ör. eski telefon + yeni telefon), her
+/// birine ayrı push gönderilir.
+export async function getDeviceTokens(userId: string): Promise<string[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("device_tokens")
+    .select("device_token")
+    .eq("user_id", userId);
+
+  if (error) throw error;
+  return (data ?? []).map((row) => row.device_token);
+}

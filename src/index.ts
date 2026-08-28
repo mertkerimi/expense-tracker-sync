@@ -3,7 +3,8 @@ import { gmail_v1 } from "googleapis";
 import { getGmailClient, fetchMatchingMessages, extractHtmlBody } from "./gmail.js";
 import { fetchMatchingOutlookMessages, extractOutlookHtmlBody } from "./outlook.js";
 import { extractBodyText, parseExpenseEmail } from "./parser.js";
-import { insertExpense } from "./supabase.js";
+import { insertExpense, getDeviceTokens } from "./supabase.js";
+import { sendPushNotification } from "./push.js";
 
 const FROM_ADDRESS = "yapikredi@iletisim.yapikredi.com.tr";
 const SUBJECT = "Akıllı Asistan Bilgilendirmesi";
@@ -59,6 +60,33 @@ function buildAccounts(): Account[] {
   return accounts;
 }
 
+/// Yeni bir işlem eklendiğinde kullanıcının kayıtlı tüm cihazlarına push
+/// bildirimi gönderir — APNs kimlik bilgileri (APNS_KEY_ID vb.) hiç
+/// ayarlanmamışsa özelliği sessizce atlar, tek bir cihazın push'u
+/// başarısız olursa (ör. token artık geçersiz) diğerlerini ve senkronun
+/// geri kalanını etkilemez.
+async function notifyNewExpense(userId: string, merchant: string, amount: number): Promise<void> {
+  if (!process.env.APNS_KEY_ID) return;
+
+  const formattedAmount = amount.toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  try {
+    const tokens = await getDeviceTokens(userId);
+    await Promise.all(
+      tokens.map((token) =>
+        sendPushNotification(token, "Yeni harcama", `${merchant} — ${formattedAmount} TL`).catch((err) =>
+          console.warn(`Push gönderilemedi (${token.slice(0, 8)}…):`, err.message ?? err),
+        ),
+      ),
+    );
+  } catch (err) {
+    console.warn("Cihaz token'ları okunamadı, push atlanıyor:", err);
+  }
+}
+
 async function processAccount(account: Account): Promise<boolean> {
   let hadError = false;
   const messages = await account.fetchMessages();
@@ -84,6 +112,7 @@ async function processAccount(account: Account): Promise<boolean> {
         console.log(
           `[${account.label}:${message.id}] Eklendi: ${parsed.merchant} — ${parsed.amount.toFixed(2)} TL (${parsed.transactionAt})`,
         );
+        await notifyNewExpense(account.expenseUserId, parsed.merchant, parsed.amount);
       } else {
         console.log(`[${account.label}:${message.id}] Zaten işlenmiş, atlandı.`);
       }
