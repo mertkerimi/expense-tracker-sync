@@ -23,6 +23,26 @@ interface Account {
   fetchMessages: () => Promise<RawMessage[]>;
 }
 
+/// Supabase'in kendi API gateway'i ara sıra geçici bir `Gateway Timeout`
+/// dönebiliyor — bu, mesajın işlenmesini gerçekten engelleyen bir sorun
+/// değil, birkaç saniyede kendi kendine düzelen bir blip. Bunu tek seferlik
+/// hata sayıp tüm senkronu (ve dolayısıyla GitHub Actions job'ını) "failed"
+/// işaretlemek yerine birkaç kez kısa aralıklarla deniyoruz.
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 800): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 function buildAccounts(): Account[] {
   const accounts: Account[] = [];
 
@@ -107,7 +127,7 @@ async function processAccount(account: Account): Promise<boolean> {
         continue;
       }
 
-      const result = await insertExpense(message.id, parsed, account.expenseUserId);
+      const result = await withRetry(() => insertExpense(message.id, parsed, account.expenseUserId));
       if (result === "inserted") {
         console.log(
           `[${account.label}:${message.id}] Eklendi: ${parsed.merchant} — ${parsed.amount.toFixed(2)} TL (${parsed.transactionAt})`,
