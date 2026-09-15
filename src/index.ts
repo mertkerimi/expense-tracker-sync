@@ -1,6 +1,5 @@
 import "dotenv/config";
-import { gmail_v1 } from "googleapis";
-import { getGmailClient, fetchMatchingMessages, extractHtmlBody } from "./gmail.js";
+import { fetchMatchingGmailMessages } from "./gmail.js";
 import { fetchMatchingOutlookMessages, extractOutlookHtmlBody } from "./outlook.js";
 import { extractBodyText, parseExpenseEmail } from "./parser.js";
 import { insertExpense, getDeviceTokens } from "./supabase.js";
@@ -9,8 +8,6 @@ import { sendPushNotification } from "./push.js";
 const FROM_ADDRESS = "yapikredi@iletisim.yapikredi.com.tr";
 const SUBJECT = "Akıllı Asistan Bilgilendirmesi";
 const NEWER_THAN_DAYS = 2;
-
-const GMAIL_QUERY = `from:${FROM_ADDRESS} subject:"${SUBJECT}" newer_than:${NEWER_THAN_DAYS}d`;
 
 interface RawMessage {
   id: string;
@@ -46,17 +43,18 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 800): 
 function buildAccounts(): Account[] {
   const accounts: Account[] = [];
 
-  if (process.env.EXPENSE_USER_ID) {
+  if (process.env.GMAIL_IMAP_USER && process.env.GMAIL_APP_PASSWORD && process.env.EXPENSE_USER_ID) {
     accounts.push({
       label: "gmail",
       expenseUserId: process.env.EXPENSE_USER_ID,
-      fetchMessages: async () => {
-        const gmail = getGmailClient();
-        const messages = await fetchMatchingMessages(gmail, GMAIL_QUERY);
-        return messages
-          .filter((m): m is gmail_v1.Schema$Message & { id: string } => !!m.id)
-          .map((m) => ({ id: m.id, html: extractHtmlBody(m.payload) }));
-      },
+      fetchMessages: () =>
+        fetchMatchingGmailMessages(
+          process.env.GMAIL_IMAP_USER!,
+          process.env.GMAIL_APP_PASSWORD!,
+          FROM_ADDRESS,
+          SUBJECT,
+          NEWER_THAN_DAYS,
+        ),
     });
   }
 

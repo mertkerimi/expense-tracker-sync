@@ -7,8 +7,7 @@ Kullanıcı hiçbir şey yapmıyor: kart ile alışveriş yapılır, banka mail 
 ## Nasıl çalışıyor
 
 ```
-Gmail / Outlook (banka bildirim maili)
-        │  IMAP değil, resmi API'ler (Gmail API + Microsoft Graph)
+Gmail (IMAP) / Outlook (Microsoft Graph) — banka bildirim maili
         ▼
    parser.ts  ── e-posta HTML'inden kart no / tutar / tarih / işyeri çıkarır
         ▼
@@ -18,8 +17,12 @@ Gmail / Outlook (banka bildirim maili)
 ```
 
 İki hesap paralel işlenir:
-- **Mert** → Gmail API (`gmail.ts`)
-- **Aylin** → Microsoft Graph API (`outlook.ts`)
+- **Mert** → Gmail, düz **IMAP + App Password** (`gmail.ts`) — bkz. aşağıdaki not
+- **Aylin** → Outlook, **Microsoft Graph OAuth** (`outlook.ts`)
+
+### Neden Gmail tarafı Gmail API/OAuth değil de IMAP kullanıyor?
+
+Google, OAuth consent screen'i **Testing** modundayken verdiği refresh token'ları **7 günde bir otomatik geçersiz kılıyor** — bu da her hafta sync'in sessizce durup GitHub'ın "job failed" maili atmasına sebep oluyordu (git geçmişinde birkaç kez elle düzeltildiği görülebilir). App Password'ler bu süre sınırına tabi değil — kullanıcı elle iptal etmediği sürece süresizler — o yüzden Gmail tarafı düz IMAP'e çevrildi ve sorun kökten çözüldü. Outlook tarafı bu sorunu hiç yaşamadığı için (Microsoft'un token politikası daha gevşek) değiştirilmedi.
 
 Her ikisi de aynı regex tabanlı parser'ı (`parser.ts`) kullanır, çünkü ikisi de aynı bankanın aynı formatlı bildirim mailini alıyor.
 
@@ -41,8 +44,8 @@ npm run dev             # tek seferlik yerel test çalıştırması
 
 | Değişken | Açıklama |
 |---|---|
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Gmail API için OAuth istemci bilgileri (Google Cloud Console) |
-| `GOOGLE_REFRESH_TOKEN` | `npm run get-token` ile üretilir — **Testing modundaki OAuth consent screen'lerde 7 günde bir expire olur**, o yüzden düzenli yenilenmesi gerekebilir |
+| `GMAIL_IMAP_USER` | Mert'in Gmail adresi |
+| `GMAIL_APP_PASSWORD` | [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) — hesapta 2FA açık olmalı. Süresiz geçerli, expire olmaz. |
 | `EXPENSE_USER_ID` | Mert'in Supabase `auth.users` id'si |
 | `MS_CLIENT_ID` / `MS_REFRESH_TOKEN` | Outlook hesabı için Microsoft Graph OAuth bilgileri, `npm run get-token-outlook` ile üretilir |
 | `EXPENSE_USER_ID_2` | Aylin'in Supabase `auth.users` id'si |
@@ -57,7 +60,6 @@ Yerelde `.env`, GitHub Actions'da repo **Secrets** olarak tutulur; ikisi de ayn�
 npm run dev                # src/index.ts'i doğrudan çalıştır (tsx)
 npm run build               # dist/ altına derle
 npm start                   # derlenmiş sürümü çalıştır (Actions'ın kullandığı)
-npm run get-token           # Gmail için yeni refresh token al (tarayıcı açar)
 npm run get-token-outlook   # Outlook için yeni refresh token al (tarayıcı açar)
 npm run typecheck
 ```

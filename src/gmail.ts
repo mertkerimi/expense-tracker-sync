@@ -1,52 +1,70 @@
-import { google, gmail_v1 } from "googleapis";
+import { ImapFlow } from "imapflow";
+import { simpleParser } from "mailparser";
 
-export function getGmailClient(): gmail_v1.Gmail {
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-  );
-  oauth2Client.setCredentials({
-    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-  });
-  return google.gmail({ version: "v1", auth: oauth2Client });
+export interface RawGmailMessage {
+  id: string;
+  html: string | null;
 }
 
-export async function fetchMatchingMessages(
-  gmail: gmail_v1.Gmail,
-  query: string,
-): Promise<gmail_v1.Schema$Message[]> {
-  const list = await gmail.users.messages.list({
-    userId: "me",
-    q: query,
-    maxResults: 50,
+// Google, OAuth consent screen'i "Testing" modundayken verdiği refresh
+// token'ları 7 günde bir otomatik geçersiz kılıyor — bu da GitHub Actions'ın
+// haftada bir sessizce durmasına ve GitHub'ın sana "job failed" maili
+// atmasına sebep oluyordu (bkz. git log). Bunun yerine düz IMAP + App
+// Password kullanıyoruz: App Password, kullanıcı elle iptal etmediği sürece
+// süresiz geçerli, bu yüzden bu sorunu kökten çözüyor. (Outlook tarafı hâlâ
+// Microsoft Graph OAuth kullanıyor — Aylin'in refresh token'ı bu tür bir
+// süre sınırına hiç takılmadığı için orası değiştirilmedi.)
+export async function fetchMatchingGmailMessages(
+  user: string,
+  appPassword: string,
+  fromAddress: string,
+  subjectContains: string,
+  newerThanDays: number,
+): Promise<RawGmailMessage[]> {
+  const client = new ImapFlow({
+    host: "imap.gmail.com",
+    port: 993,
+    secure: true,
+    auth: { user, pass: appPassword },
+    logger: false,
   });
-  const ids = list.data.messages ?? [];
 
-  const messages: gmail_v1.Schema$Message[] = [];
-  for (const { id } of ids) {
-    if (!id) continue;
-    const full = await gmail.users.messages.get({
-      userId: "me",
-      id,
-      format: "full",
-    });
-    messages.push(full.data);
+  const messages: RawGmailMessage[] = [];
+
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const since = new Date(Date.now() - newerThanDays * 24 * 60 * 60 * 1000);
+
+      // IMAP SEARCH'te SUBJECT/FROM alt-string eşleşmesi yapar (Gmail API'nin
+      // q= aramasındaki gibi tam bir "içerir" değil ama pratikte aynı işi
+      // görüyor — konu satırı hep birebir aynı, adres tam eşleşiyor).
+      const uids = await client.search(
+        { from: fromAddress, subject: subjectContains, since },
+        { uid: true },
+      );
+
+      // .search() eşleşme yoksa `false` dönüyor (boş dizi değil), IMAP'ın
+      // kendine has davranışı.
+      for (const uid of uids || []) {
+        const { content } = await client.download(String(uid), undefined, { uid: true });
+        const parsed = await simpleParser(content);
+
+        // Message-ID header'ı, Supabase'deki gmail_message_id kolonunun
+        // beklediği "her e-posta için sabit, tekrar aynı gelmeyecek kimlik"
+        // şartını IMAP tarafında da karşılıyor — uid, kutu yeniden
+        // düzenlendiğinde değişebildiği için buna güvenilmiyor.
+        const id = parsed.messageId ?? `imap-uid-${uid}`;
+        const html = typeof parsed.html === "string" ? parsed.html : (parsed.textAsHtml ?? null);
+        messages.push({ id, html });
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
   }
+
   return messages;
-}
-
-// Gmail API, format=full ile Content-Transfer-Encoding'i (quoted-printable vb.)
-// zaten çözerek döner; body.data burada doğrudan kullanılabilir UTF-8 HTML'dir.
-export function extractHtmlBody(
-  payload?: gmail_v1.Schema$MessagePart,
-): string | null {
-  if (!payload) return null;
-  if (payload.mimeType === "text/html" && payload.body?.data) {
-    return Buffer.from(payload.body.data, "base64url").toString("utf8");
-  }
-  for (const part of payload.parts ?? []) {
-    const found = extractHtmlBody(part);
-    if (found) return found;
-  }
-  return null;
 }
