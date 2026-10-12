@@ -137,3 +137,54 @@ create policy "users manage own category budgets"
   for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- İşlenen her kredi kartı ekstresi. Banka kesim ve son ödeme günlerini aydan
+-- aya kaydırabildiği için gerçek tarihler buradan okunur; message_id aynı
+-- ekstre mailinin iki kez işlenmesini engeller.
+create table if not exists statements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id),
+  message_id text not null unique,
+  cutoff_date date not null,
+  due_date date,
+  next_cutoff_date date,
+  next_due_date date,
+  period_debt numeric(12, 2),
+  processed_at timestamptz not null default now()
+);
+
+alter table statements enable row level security;
+
+create policy "users read own statements"
+  on statements
+  for select
+  using (auth.uid() = user_id);
+
+-- Ekstre ile expenses tablosu arasında bulunan her fark (bkz. src/reconcile.ts).
+-- Backend service role ile yazar; kullanıcı kendi bulgularını okuyup
+-- onaylayabilir ya da reddedebilir.
+create table if not exists statement_findings (
+  id uuid primary key default gen_random_uuid(),
+  statement_id uuid not null references statements (id) on delete cascade,
+  user_id uuid not null references auth.users (id),
+  kind text not null,
+  expense_id uuid references expenses (id),
+  details jsonb not null,
+  status text not null default 'pending'
+    check (status in ('pending', 'applied', 'approved', 'rejected')),
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+alter table statement_findings enable row level security;
+
+create policy "users read own findings"
+  on statement_findings
+  for select
+  using (auth.uid() = user_id);
+
+create policy "users resolve own findings"
+  on statement_findings
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

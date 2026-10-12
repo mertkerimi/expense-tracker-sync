@@ -4,6 +4,7 @@ import { fetchMatchingOutlookMessages, extractOutlookHtmlBody } from "./outlook.
 import { extractBodyText, parseExpenseEmail } from "./parser.js";
 import { insertExpense, getDeviceTokens } from "./supabase.js";
 import { sendPushNotification } from "./push.js";
+import { syncStatements } from "./statement-sync.js";
 
 const FROM_ADDRESS = "yapikredi@iletisim.yapikredi.com.tr";
 const SUBJECT = "Akıllı Asistan Bilgilendirmesi";
@@ -154,6 +155,22 @@ async function main() {
   for (const account of accounts) {
     const accountHadError = await processAccount(account);
     hadError = hadError || accountHadError;
+  }
+
+  // Ekstre kontrolü şimdilik sadece Gmail hesabı için (bkz. statement-sync.ts).
+  // Ayrı try/catch: ekstre tarafındaki bir hata harcama senkronunu etkilemesin.
+  if (process.env.GMAIL_IMAP_USER && process.env.GMAIL_APP_PASSWORD && process.env.EXPENSE_USER_ID) {
+    try {
+      const statementsHadError = await syncStatements(
+        process.env.GMAIL_IMAP_USER,
+        process.env.GMAIL_APP_PASSWORD,
+        process.env.EXPENSE_USER_ID,
+      );
+      hadError = hadError || statementsHadError;
+    } catch (err) {
+      console.error("[ekstre] Ekstre kontrolü çalıştırılamadı:", err);
+      hadError = true;
+    }
   }
 
   if (hadError) {

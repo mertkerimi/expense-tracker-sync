@@ -32,6 +32,31 @@ Workflow `.github/workflows/sync.yml` içinde tanımlı ve normalde GitHub'ın k
 
 > **Not:** Bu, aylık ücretsiz Actions dakika kotasını (private repo'da 2000 dk/ay) hızlıca tüketebilir — repo bu yüzden **public**: public repolarda Actions dakikası sınırsız ve ücretsizdir.
 
+## Ekstre kontrolü
+
+Banka her ay hesap kesiminden sonra ekstreyi PDF ekiyle mail atıyor. Servis bu maili de yakalar ve ekstreyi veritabanındaki harcamalarla karşılaştırır; bildirim maili hiç gelmeyen kalemler (faiz, küçük tutarlar), sonradan taksitlendirilen işlemler ve yanlış kaydedilmiş taksitler ancak böyle fark edilebiliyor.
+
+```
+Gmail (IMAP) — "… TL Worldcard Hesap Özeti" maili + PDF eki
+        ▼
+   pdf.ts        ── PDF'ten metin satırlarını çıkarır
+        ▼
+   statement.ts  ── satırları ekstreye çevirir, toplamları ekstredeki TOPLAM ile doğrular
+        ▼
+   reconcile.ts  ── ekstreyi expenses tablosuyla karşılaştırır, bulgu üretir
+        ▼
+   fixes.ts      ── her bulgu için düzeltmeyi hesaplar (güvenli olmayanlar için düzeltme yok)
+        ▼
+   statement-sync.ts ── ekstreyi ve bulguları kaydeder, düzeltmeleri uygular, push atar
+```
+
+- **Güvenlik:** Okunan işlemlerin toplamı ekstredeki `TOPLAM` ve `Dönem İçi Harcamalar` ile tutmuyorsa (ör. banka PDF düzenini değiştirdiyse) hiçbir şey değiştirilmez, sadece haber verilir.
+- **Kendiliğinden düzeltilenler** (`STATEMENT_AUTO_APPLY=true` ise): veritabanında olmayan işlemin eklenmesi, tek çekim görünen işlemin taksite çevrilmesi, taksit tutarının düzeltilmesi.
+- **Onay bekleyenler:** veritabanında olup ekstrede olmayan kayıtlar, bankanın geri aldığı işlemler ve iadeler. Servis hiçbir zaman kendiliğinden kayıt silmez.
+- **Rapor modu:** `STATEMENT_AUTO_APPLY` "true" değilse bulgular `statement_findings` tablosuna yazılıp bildirilir ama harcamalara dokunulmaz.
+- **Tarihler:** Her ekstrenin gerçek kesim ve son ödeme tarihi (ve bir sonraki ayınkiler) `statements` tablosuna yazılır; banka bu günleri aydan aya kaydırabiliyor.
+- **Kapsam:** Şimdilik sadece Gmail hesabı (Mert). Outlook tarafında ek indirme yok.
+
 ## Kurulum
 
 ```bash
@@ -50,6 +75,7 @@ npm run dev             # tek seferlik yerel test çalıştırması
 | `MS_CLIENT_ID` / `MS_REFRESH_TOKEN` | Outlook hesabı için Microsoft Graph OAuth bilgileri, `npm run get-token-outlook` ile üretilir |
 | `EXPENSE_USER_ID_2` | Aylin'in Supabase `auth.users` id'si |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Service-role erişimiyle `expenses` / `device_tokens` tablolarına yazmak için |
+| `STATEMENT_AUTO_APPLY` | Ekstre kontrolünde güvenli düzeltmeler kendiliğinden uygulansın mı ("true" / boş). Actions'da secret değil, repo **Variables** altında tutulur. |
 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_AUTH_KEY` / `APNS_BUNDLE_ID` | Push bildirimleri için Apple APNs kimlik bilgileri — tanımlı değilse push özelliği sessizce devre dışı kalır |
 
 Yerelde `.env`, GitHub Actions'da repo **Secrets** olarak tutulur; ikisi de aynı isimlerle.
@@ -62,6 +88,7 @@ npm run build               # dist/ altına derle
 npm start                   # derlenmiş sürümü çalıştır (Actions'ın kullandığı)
 npm run get-token-outlook   # Outlook için yeni refresh token al (tarayıcı açar)
 npm run typecheck
+npm test                    # ekstre ayrıştırma, eşleştirme ve düzeltme testleri
 ```
 
 ## Veri modeli

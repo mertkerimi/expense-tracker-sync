@@ -31,3 +31,6 @@ jobs:
           APNS_TEAM_ID: ${{ secrets.APNS_TEAM_ID }}
           APNS_AUTH_KEY: ${{ secrets.APNS_AUTH_KEY }}
           APNS_BUNDLE_ID: ${{ secrets.APNS_BUNDLE_ID }}
+          # Repo ayarlarındaki Actions değişkeni; "true" değilse ekstre
+          # kontrolü rapor modunda çalışır (harcamalara dokunmaz).
+          STATEMENT_AUTO_APPLY: ${{ vars.STATEMENT_AUTO_APPLY }}

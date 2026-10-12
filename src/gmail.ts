@@ -6,6 +6,77 @@ export interface RawGmailMessage {
   html: string | null;
 }
 
+export interface StatementEmail {
+  id: string;
+  subject: string;
+  /** Mailin ilk PDF eki; ek yoksa null. */
+  pdf: Uint8Array | null;
+}
+
+/// Ekstre maillerini (PDF ekiyle) getirir. Ekstre ayda bir geldiği ve eki
+/// harcama bildirimlerine göre büyük olduğu için önce sadece zarflar okunur;
+/// `alreadyProcessed` true dönen mailler hiç indirilmez. Sonuç eskiden yeniye
+/// sıralıdır.
+export async function fetchStatementEmails(
+  user: string,
+  appPassword: string,
+  fromAddress: string,
+  subjectContains: string,
+  newerThanDays: number,
+  alreadyProcessed: (messageId: string) => Promise<boolean>,
+): Promise<StatementEmail[]> {
+  const client = new ImapFlow({
+    host: "imap.gmail.com",
+    port: 993,
+    secure: true,
+    auth: { user, pass: appPassword },
+    logger: false,
+  });
+
+  const emails: StatementEmail[] = [];
+
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock("INBOX");
+    try {
+      const since = new Date(Date.now() - newerThanDays * 24 * 60 * 60 * 1000);
+      const uids = (await client.search({ from: fromAddress, since }, { uid: true })) || [];
+
+      // Konu Türkçe karakter içerdiği için IMAP SEARCH'e bırakılmıyor
+      // (sunucunun karakter kümesi desteğine bağlı), burada süzülüyor.
+      const candidates: { uid: number; date: number }[] = [];
+      for (const uid of uids) {
+        const message = await client.fetchOne(String(uid), { envelope: true }, { uid: true });
+        if (!message || !message.envelope) continue;
+        const { messageId, subject, date } = message.envelope;
+        if (!subject?.normalize("NFC").includes(subjectContains)) continue;
+        if (messageId && (await alreadyProcessed(messageId))) continue;
+        candidates.push({ uid, date: date?.getTime() ?? 0 });
+      }
+      candidates.sort((a, b) => a.date - b.date);
+
+      for (const { uid } of candidates) {
+        const { content } = await client.download(String(uid), undefined, { uid: true });
+        const parsed = await simpleParser(content);
+        const attachment = parsed.attachments.find(
+          (file) => file.contentType === "application/pdf" || file.filename?.toLowerCase().endsWith(".pdf"),
+        );
+        emails.push({
+          id: parsed.messageId ?? `imap-uid-${uid}`,
+          subject: parsed.subject ?? "",
+          pdf: attachment ? new Uint8Array(attachment.content) : null,
+        });
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+
+  return emails;
+}
+
 // Google, OAuth consent screen'i "Testing" modundayken verdiği refresh
 // token'ları 7 günde bir otomatik geçersiz kılıyor — bu da GitHub Actions'ın
 // haftada bir sessizce durmasına ve GitHub'ın sana "job failed" maili
