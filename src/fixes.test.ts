@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { nextPeriodBoundary, planFix, type ExpenseRow, type FixContext } from "./fixes.js";
+import { nextPeriodBoundary, planApprovedAction, planFix, type ExpenseRow, type FixContext } from "./fixes.js";
 import type { StatementTransaction } from "./statement.js";
 
 // Uydurma veri — repo herkese açık olduğu için buraya gerçek işlem konmuyor.
@@ -128,4 +128,55 @@ test("silme gerektiren bulgular ve iadeler kendiliğinden düzeltilmez", () => {
   assert.equal(planFix({ kind: "extra", expense: stored }, context), null);
   assert.equal(planFix({ kind: "reversed", expense: stored, transaction }, context), null);
   assert.equal(planFix({ kind: "refund", cardLast4: "1111", transaction }, context), null);
+});
+
+test("onaylanan bulgu: rapor modunda kaydedilmiş düzeltme olduğu gibi uygulanır", () => {
+  const fix = { updateExpense: { id: "row-1", amount: 200 } };
+  assert.deepEqual(
+    planApprovedAction({ kind: "amount_mismatch", expenseId: "row-1", details: { fix }, cutoffDate: "2026-09-27" }, null),
+    { fix },
+  );
+});
+
+test("onaylanan bulgu: ekstrede olmayan ve geri alınan kayıt silinir", () => {
+  for (const kind of ["extra", "reversed"]) {
+    assert.deepEqual(
+      planApprovedAction({ kind, expenseId: "row-1", details: {}, cutoffDate: "2026-09-27" }, null),
+      { deleteExpenseId: "row-1" },
+    );
+  }
+  assert.equal(planApprovedAction({ kind: "extra", expenseId: null, details: {}, cutoffDate: "2026-09-27" }, null), null);
+});
+
+test("onaylanan bulgu: iade, kartın türüyle eksi tutarlı harcama olarak eklenir", () => {
+  const transaction: StatementTransaction = {
+    date: "2026-09-10",
+    description: "ORNEK MAGAZA İSTANBUL TR",
+    amount: -99.9,
+    installment: null,
+  };
+  assert.deepEqual(
+    planApprovedAction(
+      { kind: "refund", expenseId: null, details: { transaction, cardLast4: "2222" }, cutoffDate: "2026-09-27" },
+      "Worldcard dijital",
+    ),
+    {
+      fix: {
+        insertExpense: {
+          cardLast4: "2222",
+          cardType: "Worldcard dijital",
+          merchant: "ORNEK MAGAZA İSTANBUL",
+          amount: -99.9,
+          transactionAt: "2026-09-10T12:00:00+03:00",
+        },
+      },
+    },
+  );
+});
+
+test("onaylanan bulgu: okunamayan ekstre uyarısında uygulanacak bir şey yok", () => {
+  assert.equal(
+    planApprovedAction({ kind: "unreadable", expenseId: null, details: {}, cutoffDate: "2026-09-27" }, null),
+    null,
+  );
 });

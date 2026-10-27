@@ -4,7 +4,7 @@
 // null döner — onlar kullanıcının onayını bekler.
 
 import type { DbExpense, Finding } from "./reconcile.js";
-import type { ParsedStatement } from "./statement.js";
+import type { ParsedStatement, StatementTransaction } from "./statement.js";
 
 /** Düzeltme için gereken ek alanlarıyla bir `expenses` satırı. */
 export interface ExpenseRow extends DbExpense {
@@ -142,6 +142,73 @@ export function planFix(finding: Finding, context: FixContext): Fix | null {
     case "reversed":
     case "refund":
     case "extra":
+      return null;
+  }
+}
+
+/** `statement_findings` tablosundaki bir bulgu, kullanıcı onayladıktan sonra. */
+export interface ApprovedFinding {
+  kind: string;
+  expenseId: string | null;
+  details: {
+    fix?: Fix;
+    transaction?: StatementTransaction;
+    cardLast4?: string;
+  };
+  /** Bulgunun ait olduğu ekstrenin kesim tarihi (YYYY-AA-GG). */
+  cutoffDate: string;
+}
+
+export type ApprovedAction = { fix: Fix } | { deleteExpenseId: string };
+
+/// Kullanıcının uygulamada onayladığı bir bulgunun nasıl uygulanacağı.
+/// Burada hiçbir şey yazılmaz. Uygulanacak bir şey yoksa (ör. okunamayan
+/// ekstre uyarısı) null döner; bulgu yine de kapatılır.
+///
+/// - Rapor modunda kaydedilmiş düzeltmeler (`details.fix`) olduğu gibi uygulanır.
+/// - Ekstrede olmayan (`extra`) ya da bankanın geri aldığı (`reversed`) kayıt
+///   silinir.
+/// - Karşılığı olmayan alacak (`refund`) eksi tutarlı bir harcama olarak
+///   eklenir; `cardType` aynı kartın mevcut bir kaydından gelir.
+export function planApprovedAction(finding: ApprovedFinding, cardType: string | null): ApprovedAction | null {
+  if (finding.details.fix) return { fix: finding.details.fix };
+
+  switch (finding.kind) {
+    case "extra":
+    case "reversed":
+      return finding.expenseId ? { deleteExpenseId: finding.expenseId } : null;
+
+    case "refund": {
+      const { transaction, cardLast4 } = finding.details;
+      if (!transaction || !cardLast4) return null;
+      const fix = planFix(
+        { kind: "missing", cardLast4, transaction },
+        {
+          cutoffDay: 0, // "missing" düzeltmesi kesim gününü kullanmıyor.
+          statement: {
+            cutoffDate: finding.cutoffDate,
+            dueDate: null,
+            nextCutoffDate: null,
+            nextDueDate: null,
+            periodDebt: null,
+            periodSpending: null,
+            cards: [
+              {
+                cardLast4,
+                isDigital: cardType?.toLowerCase().includes("dijital") ?? false,
+                transactions: [],
+                previousDebt: 0,
+                payments: 0,
+                statedTotal: null,
+              },
+            ],
+          },
+        },
+      );
+      return fix ? { fix } : null;
+    }
+
+    default:
       return null;
   }
 }

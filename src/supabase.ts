@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import type { ExpenseRow, Fix } from "./fixes.js";
+import type { ApprovedFinding, ExpenseRow, Fix } from "./fixes.js";
 import type { ParsedExpense } from "./parser.js";
 
 function getSupabaseClient() {
@@ -218,4 +218,66 @@ export async function applyFix(userId: string, fix: Fix): Promise<void> {
       .eq("installment_count", installmentCount);
     if (error) throw error;
   }
+}
+
+export interface ApprovedFindingRow {
+  id: string;
+  userId: string;
+  finding: ApprovedFinding;
+}
+
+/// Kullanıcıların uygulamada onayladığı, henüz uygulanmamış bulgular.
+export async function getApprovedFindings(): Promise<ApprovedFindingRow[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("statement_findings")
+    .select("id, user_id, kind, expense_id, details, statements(cutoff_date)")
+    .eq("status", "approved");
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const statement = row.statements as unknown as { cutoff_date: string } | null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      finding: {
+        kind: row.kind,
+        expenseId: row.expense_id,
+        details: row.details ?? {},
+        cutoffDate: statement?.cutoff_date ?? "",
+      },
+    };
+  });
+}
+
+/// Kullanıcının bu karttaki herhangi bir kaydının kart türü ("Worldcard",
+/// "Worldcard dijital"); kayıt yoksa null.
+export async function getCardType(userId: string, cardLast4: string): Promise<string | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("expenses")
+    .select("card_type")
+    .eq("user_id", userId)
+    .eq("card_last4", cardLast4)
+    .limit(1);
+  if (error) throw error;
+  return data?.[0]?.card_type ?? null;
+}
+
+/// Kaydı uygulamadaki silmeyle aynı şekilde "silindi" olarak işaretler;
+/// banka mailinden gelen kayıtların gerçekten silinmesi, bir sonraki
+/// taramada geri eklenmelerine yol açardı.
+export async function markExpenseDeleted(expenseId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from("expenses").update({ is_deleted: true }).eq("id", expenseId);
+  if (error) throw error;
+}
+
+export async function markFindingApplied(findingId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from("statement_findings")
+    .update({ status: "applied", resolved_at: new Date().toISOString() })
+    .eq("id", findingId)
+    .eq("status", "approved");
+  if (error) throw error;
 }

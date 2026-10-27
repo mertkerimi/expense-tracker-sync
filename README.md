@@ -52,7 +52,7 @@ Gmail (IMAP) — "… TL Worldcard Hesap Özeti" maili + PDF eki
 
 - **Güvenlik:** Okunan işlemlerin toplamı ekstredeki `TOPLAM` ve `Dönem İçi Harcamalar` ile tutmuyorsa (ör. banka PDF düzenini değiştirdiyse) hiçbir şey değiştirilmez, sadece haber verilir.
 - **Kendiliğinden düzeltilenler** (`STATEMENT_AUTO_APPLY=true` ise): veritabanında olmayan işlemin eklenmesi, tek çekim görünen işlemin taksite çevrilmesi, taksit tutarının düzeltilmesi.
-- **Onay bekleyenler:** veritabanında olup ekstrede olmayan kayıtlar, bankanın geri aldığı işlemler ve iadeler. Servis hiçbir zaman kendiliğinden kayıt silmez.
+- **Onay bekleyenler:** veritabanında olup ekstrede olmayan kayıtlar, bankanın geri aldığı işlemler ve iadeler. Servis hiçbir zaman kendiliğinden kayıt silmez. Kullanıcı bunları uygulamadaki "Ekstre kontrolü" ekranından onaylar ya da reddeder (`statement_findings.status`); onaylananları servis bir sonraki çalışmasında uygular (`applyApprovedFindings`): fazla ya da geri alınmış kayıt "silindi" olarak işaretlenir, iade eksi tutarlı harcama olarak eklenir, rapor modunda bekleyen düzeltmeler olduğu gibi uygulanır.
 - **Rapor modu:** `STATEMENT_AUTO_APPLY` "true" değilse bulgular `statement_findings` tablosuna yazılıp bildirilir ama harcamalara dokunulmaz.
 - **Tarihler:** Her ekstrenin gerçek kesim ve son ödeme tarihi (ve bir sonraki ayınkiler) `statements` tablosuna yazılır; banka bu günleri aydan aya kaydırabiliyor.
 - **Kapsam:** Şimdilik sadece Gmail hesabı (Mert). Outlook tarafında ek indirme yok.

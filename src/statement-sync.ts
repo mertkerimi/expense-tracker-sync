@@ -2,7 +2,7 @@
 // doğrular, veritabanıyla karşılaştırır, bulguları kaydeder, (izin verilmişse)
 // güvenli olanları düzeltir ve sonucu push bildirimiyle haber verir.
 
-import { planFix, type ExpenseRow } from "./fixes.js";
+import { planApprovedAction, planFix, type ExpenseRow } from "./fixes.js";
 import { fetchStatementEmails, type StatementEmail } from "./gmail.js";
 import { extractPdfLines } from "./pdf.js";
 import { sendPushNotification } from "./push.js";
@@ -10,6 +10,8 @@ import { reconcile, type Finding } from "./reconcile.js";
 import { parseStatement, validateStatement } from "./statement.js";
 import {
   applyFix,
+  getApprovedFindings,
+  getCardType,
   getCutoffDay,
   getDeviceTokens,
   getExpensesSince,
@@ -17,6 +19,8 @@ import {
   insertFindings,
   insertStatement,
   isStatementProcessed,
+  markExpenseDeleted,
+  markFindingApplied,
   type FindingRecord,
 } from "./supabase.js";
 
@@ -199,6 +203,32 @@ export async function syncStatements(gmailUser: string, appPassword: string, use
       await processStatementEmail(email, userId, autoApply);
     } catch (err) {
       console.error(`[ekstre:${email.id}] İşlenirken hata oluştu, atlanıyor:`, err);
+      hadError = true;
+    }
+  }
+  return hadError;
+}
+
+/// Kullanıcının uygulamada onayladığı bulguları uygular (bkz.
+/// `planApprovedAction`). Bir bulgu hata verirse "onaylandı" olarak kalır ve
+/// bir sonraki çalıştırmada yeniden denenir; herhangi biri hata verdiyse true
+/// döner.
+export async function applyApprovedFindings(): Promise<boolean> {
+  const rows = await getApprovedFindings();
+  let hadError = false;
+  for (const { id, userId, finding } of rows) {
+    try {
+      const cardType = finding.details.cardLast4 ? await getCardType(userId, finding.details.cardLast4) : null;
+      const action = planApprovedAction(finding, cardType);
+      if (action && "fix" in action) {
+        await applyFix(userId, action.fix);
+      } else if (action) {
+        await markExpenseDeleted(action.deleteExpenseId);
+      }
+      await markFindingApplied(id);
+      console.log(`[onay:${id}] ${finding.kind} bulgusu uygulandı.`);
+    } catch (err) {
+      console.error(`[onay:${id}] Onaylanan bulgu uygulanamadı, sonra yeniden denenecek:`, err);
       hadError = true;
     }
   }

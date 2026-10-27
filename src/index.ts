@@ -4,7 +4,7 @@ import { fetchMatchingOutlookMessages, extractOutlookHtmlBody } from "./outlook.
 import { extractBodyText, parseExpenseEmail } from "./parser.js";
 import { insertExpense, getDeviceTokens } from "./supabase.js";
 import { sendPushNotification } from "./push.js";
-import { syncStatements } from "./statement-sync.js";
+import { applyApprovedFindings, syncStatements } from "./statement-sync.js";
 
 const FROM_ADDRESS = "yapikredi@iletisim.yapikredi.com.tr";
 const SUBJECT = "Akıllı Asistan Bilgilendirmesi";
@@ -171,6 +171,17 @@ async function main() {
       console.error("[ekstre] Ekstre kontrolü çalıştırılamadı:", err);
       hadError = true;
     }
+  }
+
+  // Uygulamada onaylanan bulgular (silme, iade ekleme, rapor modunda
+  // bekleyen düzeltmeler). Kullanıcıdan bağımsız: hangi kullanıcı onay
+  // verdiyse onun kaydı düzeltilir.
+  try {
+    const approvalsHadError = await applyApprovedFindings();
+    hadError = hadError || approvalsHadError;
+  } catch (err) {
+    console.error("[onay] Onaylanan bulgular uygulanamadı:", err);
+    hadError = true;
   }
 
   if (hadError) {
