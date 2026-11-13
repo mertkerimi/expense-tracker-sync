@@ -152,9 +152,16 @@ async function main() {
   }
 
   let hadError = false;
+  // Ayrı try/catch: bir hesabın mailleri alınamazsa (ör. Outlook/Graph
+  // 5xx) diğer hesaplar, ekstre kontrolü ve onaylar yine de çalışsın.
   for (const account of accounts) {
-    const accountHadError = await processAccount(account);
-    hadError = hadError || accountHadError;
+    try {
+      const accountHadError = await processAccount(account);
+      hadError = hadError || accountHadError;
+    } catch (err) {
+      console.error(`[${account.label}] Mailler alınamadı, hesap atlanıyor:`, err);
+      hadError = true;
+    }
   }
 
   // Ekstre kontrolü şimdilik sadece Gmail hesabı için (bkz. statement-sync.ts).
