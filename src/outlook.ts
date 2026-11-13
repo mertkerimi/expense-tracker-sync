@@ -98,8 +98,10 @@ export async function fetchMatchingOutlookMessages(
   let url: string | undefined =
     `${GRAPH}/me/messages` +
     `?$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}` +
-    `&$orderby=receivedDateTime desc&$top=50&$select=id,subject,from,body`;
+    `&$orderby=receivedDateTime desc&$top=50&$select=id,subject,from`;
 
+  // Listeyi gövdesiz alıyoruz: gövdeli liste isteği (tek bir büyük/bozuk
+  // mail yüzünden olabilir) Graph'ta zaman aşımına düşüp 502 dönüyordu.
   const matches: OutlookMessage[] = [];
   for (let page = 0; url && page < MAX_PAGES; page++) {
     const data: MessagesPage = await graphGet<MessagesPage>(url, accessToken);
@@ -109,6 +111,15 @@ export async function fetchMatchingOutlookMessages(
       }
     }
     url = data["@odata.nextLink"];
+  }
+
+  // Gövdeyi yalnızca eşleşen mailler için tek tek çekiyoruz.
+  for (const message of matches) {
+    const full = await graphGet<OutlookMessage>(
+      `${GRAPH}/me/messages/${encodeURIComponent(message.id)}?$select=body`,
+      accessToken,
+    );
+    message.body = full.body;
   }
 
   return matches;
